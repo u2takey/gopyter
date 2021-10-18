@@ -1,0 +1,10 @@
+{
+    "argv": [
+        "gopyter",
+        "starlark-go",
+        "{connection_file}"
+    ],
+    "display_name": "starlark-go",
+    "language": "starlark-go",
+    "name": "starlark-go"
+}

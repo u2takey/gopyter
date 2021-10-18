@@ -1,0 +1,10 @@
+{
+    "argv": [
+        "gopyter",
+        "lua-go",
+        "{connection_file}"
+    ],
+    "display_name": "lua-go",
+    "language": "lua-go",
+    "name": "lua-go"
+}
