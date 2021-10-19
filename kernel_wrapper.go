@@ -15,12 +15,12 @@ import (
 	"time"
 
 	"github.com/go-zeromq/zmq4"
-	"go.starlark.net/syntax"
 	"golang.org/x/xerrors"
 )
 
 type kernelWrapper struct {
 	KernelInterface
+	Name string
 }
 
 // runKernel is the main entry point to start the kernel.
@@ -29,7 +29,7 @@ func runKernel(kernelName, connectionFile string) {
 	if k == nil {
 		log.Fatal("kernel with name: " + kernelName + " not found")
 	}
-	kernel := kernelWrapper{k}
+	kernel := kernelWrapper{KernelInterface: k, Name: kernelName}
 
 	// Parse the connection info.
 	var connInfo ConnectionInfo
@@ -207,7 +207,7 @@ func (kernel *kernelWrapper) handleShellMsg(receipt msgReceipt) {
 
 	switch receipt.Msg.Header.MsgType {
 	case "kernel_info_request":
-		if err := sendKernelInfo(receipt); err != nil {
+		if err := kernel.sendKernelInfo(receipt); err != nil {
 			log.Fatal(err)
 		}
 	case "complete_request":
@@ -219,14 +219,14 @@ func (kernel *kernelWrapper) handleShellMsg(receipt msgReceipt) {
 			log.Fatal(err)
 		}
 	case "shutdown_request":
-		handleShutdownRequest(receipt)
+		kernel.handleShutdownRequest(receipt)
 	default:
 		log.Println("Unhandled shell message: ", receipt.Msg.Header.MsgType)
 	}
 }
 
 // sendKernelInfo sends a kernel_info_reply message.
-func sendKernelInfo(receipt msgReceipt) error {
+func (kernel *kernelWrapper) sendKernelInfo(receipt msgReceipt) error {
 	return receipt.Reply("kernel_info_reply",
 		kernelInfo{
 			ProtocolVersion:       ProtocolVersion,
@@ -234,16 +234,44 @@ func sendKernelInfo(receipt msgReceipt) error {
 			ImplementationVersion: Version,
 			Banner:                fmt.Sprintf("Go kernel: gopyter - v%s", Version),
 			LanguageInfo: kernelLanguageInfo{
-				Name:          "go+",
+				Name:          kernel.Name,
 				Version:       runtime.Version(),
 				FileExtension: ".go",
 			},
 			HelpLinks: []helpLink{
-				{Text: "Go+", URL: "https://goplus.org/"},
-				{Text: "gopyter", URL: "https://github.com/wangfenjin/gopyter"},
+				{Text: "lua-go", URL: "https://github.com/yuin/gopher-lua"},
+				{Text: "starlark-go", URL: "https://github.com/google/starlark-go"},
 			},
 		},
 	)
+}
+
+func (kernel *kernelWrapper) handleCompleteRequest(receipt msgReceipt) error {
+	// Extract the data from the request.
+	reqContent := receipt.Msg.Content.(map[string]interface{})
+	code := reqContent["code"].(string)
+	cursorPos := int(reqContent["cursor_pos"].(float64))
+
+	// autocomplete the code at the cursor position
+	matches := kernel.FindMatch(code)
+
+	// prepare the reply
+	content := make(map[string]interface{})
+
+	if len(matches) == 0 {
+		content["ename"] = "ERROR"
+		content["evalue"] = "no completions found"
+		content["traceback"] = nil
+		content["status"] = "error"
+	} else {
+		partialWord := ""
+		content["cursor_start"] = float64(0 - len(partialWord))
+		content["cursor_end"] = float64(cursorPos)
+		content["matches"] = matches
+		content["status"] = "ok"
+	}
+
+	return receipt.Reply("complete_reply", content)
 }
 
 // handleExecuteRequest runs code from an execute_request method,
@@ -317,7 +345,7 @@ func (kernel *kernelWrapper) handleExecuteRequest(receipt msgReceipt) error {
 
 	if executionErr == nil {
 		// if the only non-nil value should be auto-rendered graphically, render it
-		data := kernel.autoRenderResults(vals)
+		data := autoRenderResults(vals)
 
 		content["status"] = "ok"
 		content["user_expressions"] = make(map[string]string)
@@ -343,32 +371,8 @@ func (kernel *kernelWrapper) handleExecuteRequest(receipt msgReceipt) error {
 	return receipt.Reply("execute_reply", content)
 }
 
-// LinerUI implements repl.UI interface.
-type LinerUI struct {
-	result []interface{}
-}
-
-// SetPrompt is required by repl.UI interface.
-func (u *LinerUI) SetPrompt(prompt string) {
-	// do nothiner
-}
-
-// Printf is required by repl.UI interface.
-func (u *LinerUI) Printf(format string, a ...interface{}) {
-	u.result = a
-}
-
-func soleExpr(f *syntax.File) syntax.Expr {
-	if len(f.Stmts) == 1 {
-		if stmt, ok := f.Stmts[0].(*syntax.ExprStmt); ok {
-			return stmt.X
-		}
-	}
-	return nil
-}
-
 // handleShutdownRequest sends a "shutdown" message.
-func handleShutdownRequest(receipt msgReceipt) {
+func (kernel *kernelWrapper) handleShutdownRequest(receipt msgReceipt) {
 	content := receipt.Msg.Content.(map[string]interface{})
 	restart := content["restart"].(bool)
 

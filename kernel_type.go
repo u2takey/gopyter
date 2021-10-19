@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"github.com/go-zeromq/zmq4"
+	"go.starlark.net/syntax"
 )
 
 // ExecCounter is incremented each time we run user code in the notebook.
@@ -122,4 +123,39 @@ func imageMetadata(img image.Image) MIMEMap {
 		"width":  rect.Dx(),
 		"height": rect.Dy(),
 	}
+}
+
+// LinerUI implements repl.UI interface.
+type LinerUI struct {
+	result []interface{}
+}
+
+// SetPrompt is required by repl.UI interface.
+func (u *LinerUI) SetPrompt(prompt string) {
+	// do nothiner
+}
+
+// Printf is required by repl.UI interface.
+func (u *LinerUI) Printf(format string, a ...interface{}) {
+	u.result = a
+}
+
+func soleExpr(f *syntax.File) syntax.Expr {
+	if len(f.Stmts) == 1 {
+		if stmt, ok := f.Stmts[0].(*syntax.ExprStmt); ok {
+			return stmt.X
+		}
+	}
+	return nil
+}
+
+type Completion struct {
+	class,
+	name,
+	typ string
+}
+
+type CompletionResponse struct {
+	partial     int
+	completions []Completion
 }

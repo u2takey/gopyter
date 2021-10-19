@@ -96,7 +96,7 @@ func stubDisplay(Data) error {
 // if vals[] contain a single non-nil value which is auto-renderable,
 // convert it to Data and return it.
 // otherwise return MakeData("text/plain", fmt.Sprint(vals...))
-func (kernel *kernelWrapper) autoRenderResults(vals []interface{}) Data {
+func autoRenderResults(vals []interface{}) Data {
 	return MakeData(MIMETypeText, fmt.Sprint(vals...))
 }
 
